@@ -1,3 +1,7 @@
+/**
+ * @param { import("knex").Knex } knex
+ * @returns { Promise<void> }
+ */
 exports.up = function(knex) {
   return knex.schema.createTable('institutions', function(table) {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
@@ -10,25 +14,20 @@ exports.up = function(knex) {
     table.text('address');
     table.string('website');
     
-    // Branding
+    // Branding configuration
+    table.json('branding').defaultTo('{}');
     table.string('logo_url');
     table.string('favicon_url');
-    table.json('theme_colors').defaultTo('{}');
-    table.json('branding_config').defaultTo('{}');
+    table.string('primary_color').defaultTo('#1976d2');
+    table.string('secondary_color').defaultTo('#dc004e');
     
-    // Configuration
+    // Institution settings
     table.json('settings').defaultTo('{}');
     table.json('features').defaultTo('{}');
     table.boolean('is_active').defaultTo(true);
     table.boolean('is_trial').defaultTo(true);
     table.timestamp('trial_ends_at');
-    table.string('subscription_plan');
     table.timestamp('subscription_ends_at');
-    
-    // Limits
-    table.integer('max_users').defaultTo(100);
-    table.bigInteger('max_storage').defaultTo(1073741824); // 1GB in bytes
-    table.integer('max_courses').defaultTo(50);
     
     // Metadata
     table.timestamps(true, true);
@@ -42,6 +41,10 @@ exports.up = function(knex) {
   });
 };
 
+/**
+ * @param { import("knex").Knex } knex
+ * @returns { Promise<void> }
+ */
 exports.down = function(knex) {
   return knex.schema.dropTable('institutions');
 };
