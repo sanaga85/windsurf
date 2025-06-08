@@ -537,18 +537,18 @@ const resetUserPassword = async (req, res) => {
  */
 const bulkCreateUsers = async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
+    const validationErrors = validationResult(req);
+    if (!validationErrors.isEmpty()) {
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
-        errors: errors.array()
+        errors: validationErrors.array()
       });
     }
 
     const { users } = req.body;
     const createdUsers = [];
-    const errors = [];
+    const creationErrors = [];
 
     for (const userData of users) {
       try {
@@ -561,7 +561,7 @@ const bulkCreateUsers = async (req, res) => {
           .first();
 
         if (existingUser) {
-          errors.push({
+          creationErrors.push({
             phone,
             error: 'Phone number already exists'
           });
@@ -598,7 +598,7 @@ const bulkCreateUsers = async (req, res) => {
           role
         });
       } catch (error) {
-        errors.push({
+        creationErrors.push({
           phone: userData.phone,
           error: error.message
         });
@@ -607,7 +607,7 @@ const bulkCreateUsers = async (req, res) => {
 
     logger.info('Bulk users created', {
       count: createdUsers.length,
-      errors: errors.length,
+      errors: creationErrors.length,
       createdBy: req.user.userId
     });
 
@@ -616,7 +616,7 @@ const bulkCreateUsers = async (req, res) => {
       message: `${createdUsers.length} users created successfully`,
       data: {
         users: createdUsers,
-        errors
+        errors: creationErrors
       }
     });
   } catch (error) {
@@ -641,7 +641,7 @@ const importUsersFromCSV = async (req, res) => {
     }
 
     const users = [];
-    const errors = [];
+    const importErrors = [];
 
     // Parse CSV file
     fs.createReadStream(req.file.path)
@@ -657,7 +657,7 @@ const importUsersFromCSV = async (req, res) => {
             const { firstName, lastName, phone, email, role } = userData;
 
             if (!firstName || !lastName || !phone || !role) {
-              errors.push({
+              importErrors.push({
                 row: userData,
                 error: 'Missing required fields'
               });
@@ -671,7 +671,7 @@ const importUsersFromCSV = async (req, res) => {
               .first();
 
             if (existingUser) {
-              errors.push({
+              importErrors.push({
                 row: userData,
                 error: 'Phone number already exists'
               });
@@ -708,7 +708,7 @@ const importUsersFromCSV = async (req, res) => {
               role
             });
           } catch (error) {
-            errors.push({
+            importErrors.push({
               row: userData,
               error: error.message
             });
@@ -720,7 +720,7 @@ const importUsersFromCSV = async (req, res) => {
 
         logger.info('CSV users imported', {
           count: createdUsers.length,
-          errors: errors.length,
+          errors: importErrors.length,
           importedBy: req.user.userId
         });
 
@@ -729,74 +729,12 @@ const importUsersFromCSV = async (req, res) => {
           message: `${createdUsers.length} users imported successfully`,
           data: {
             users: createdUsers,
-            errors
+            errors: importErrors
           }
         });
       });
   } catch (error) {
     logger.error('Import users from CSV error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
-    });
-  }
-};
-
-/**
- * Generate bulk credentials
- */
-const generateBulkCredentials = async (req, res) => {
-  try {
-    const { userIds } = req.body;
-
-    if (!userIds || !Array.isArray(userIds)) {
-      return res.status(400).json({
-        success: false,
-        message: 'User IDs array is required'
-      });
-    }
-
-    const credentials = [];
-
-    for (const userId of userIds) {
-      const user = await db('users')
-        .where({ id: userId, institution_id: req.user.institutionId })
-        .whereNull('deleted_at')
-        .first();
-
-      if (user) {
-        const newPassword = generatePassword();
-        const passwordHash = await bcrypt.hash(newPassword, config.security.bcryptRounds);
-
-        await db('users')
-          .where({ id: userId })
-          .update({
-            password_hash: passwordHash,
-            force_password_change: true
-          });
-
-        credentials.push({
-          id: userId,
-          username: user.username,
-          password: newPassword,
-          firstName: user.first_name,
-          lastName: user.last_name
-        });
-      }
-    }
-
-    logger.info('Bulk credentials generated', {
-      count: credentials.length,
-      generatedBy: req.user.userId
-    });
-
-    res.json({
-      success: true,
-      message: `Credentials generated for ${credentials.length} users`,
-      data: { credentials }
-    });
-  } catch (error) {
-    logger.error('Generate bulk credentials error:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'
@@ -897,6 +835,32 @@ const exportUsers = async (req, res) => {
   }
 };
 
+/**
+ * Get available roles
+ */
+const getRoles = async (req, res) => {
+  try {
+    const roles = [
+      { value: 'institution_admin', label: 'Institution Admin', description: 'Full access to institution management' },
+      { value: 'faculty', label: 'Faculty/Trainer', description: 'Content creation and student management' },
+      { value: 'student', label: 'Student/Learner', description: 'Access to courses and library' },
+      { value: 'librarian', label: 'Librarian', description: 'Library management and support' },
+      { value: 'parent', label: 'Parent', description: 'Monitor child progress and activities' }
+    ];
+
+    res.json({
+      success: true,
+      data: { roles }
+    });
+  } catch (error) {
+    logger.error('Get roles error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+};
+
 module.exports = {
   getUsers,
   searchUsers,
@@ -909,7 +873,7 @@ module.exports = {
   resetUserPassword,
   bulkCreateUsers,
   importUsersFromCSV,
-  generateBulkCredentials,
   uploadProfilePicture,
-  exportUsers
+  exportUsers,
+  getRoles
 };

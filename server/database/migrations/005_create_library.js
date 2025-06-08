@@ -7,7 +7,7 @@ exports.up = function(knex) {
     .createTable('library_items', function(table) {
       table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
       table.uuid('institution_id').references('id').inTable('institutions').onDelete('CASCADE');
-      table.uuid('added_by').references('id').inTable('users').onDelete('SET NULL');
+      table.uuid('created_by').references('id').inTable('users').onDelete('SET NULL');
       
       // Basic information
       table.string('title').notNullable();
@@ -22,15 +22,14 @@ exports.up = function(knex) {
       table.text('description');
       
       // Classification
-      table.enum('type', ['book', 'journal', 'article', 'video', 'audio', 'document', 'url']).notNullable();
+      table.enum('type', ['book', 'ebook', 'journal', 'article', 'video', 'audio', 'document']).notNullable();
+      table.enum('format', ['physical', 'digital']).notNullable();
       table.string('category');
       table.json('subjects').defaultTo('[]');
       table.json('tags').defaultTo('[]');
       table.enum('difficulty_level', ['beginner', 'intermediate', 'advanced']);
       
-      // Physical/Digital properties
-      table.boolean('is_physical').defaultTo(false);
-      table.boolean('is_digital').defaultTo(true);
+      // Digital properties
       table.string('file_url');
       table.string('file_path');
       table.string('cover_image_url');
@@ -41,7 +40,7 @@ exports.up = function(knex) {
       
       // Physical book properties
       table.string('barcode');
-      table.string('qr_code');
+      table.text('qr_code');
       table.string('location'); // shelf location
       table.integer('total_copies').defaultTo(1);
       table.integer('available_copies').defaultTo(1);
@@ -65,60 +64,11 @@ exports.up = function(knex) {
       // Indexes
       table.index(['institution_id']);
       table.index(['type']);
+      table.index(['format']);
       table.index(['is_available']);
-      table.index(['is_physical']);
-      table.index(['is_digital']);
       table.index(['isbn']);
       table.index(['barcode']);
       table.index(['external_source', 'external_id']);
-    })
-    .createTable('library_borrowings', function(table) {
-      table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-      table.uuid('user_id').references('id').inTable('users').onDelete('CASCADE');
-      table.uuid('library_item_id').references('id').inTable('library_items').onDelete('CASCADE');
-      table.uuid('approved_by').references('id').inTable('users').onDelete('SET NULL');
-      
-      table.timestamp('borrowed_at').defaultTo(knex.fn.now());
-      table.timestamp('due_date').notNullable();
-      table.timestamp('returned_at');
-      table.timestamp('renewed_at');
-      table.integer('renewal_count').defaultTo(0);
-      table.integer('max_renewals').defaultTo(2);
-      
-      table.enum('status', ['active', 'returned', 'overdue', 'lost', 'damaged']).defaultTo('active');
-      table.text('notes');
-      table.decimal('fine_amount', 10, 2).defaultTo(0);
-      table.boolean('fine_paid').defaultTo(false);
-      
-      // Digital access tracking
-      table.timestamp('last_accessed_at');
-      table.integer('access_count').defaultTo(0);
-      
-      table.timestamps(true, true);
-      
-      table.index(['user_id']);
-      table.index(['library_item_id']);
-      table.index(['status']);
-      table.index(['due_date']);
-      table.index(['borrowed_at']);
-    })
-    .createTable('library_reservations', function(table) {
-      table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
-      table.uuid('user_id').references('id').inTable('users').onDelete('CASCADE');
-      table.uuid('library_item_id').references('id').inTable('library_items').onDelete('CASCADE');
-      
-      table.timestamp('reserved_at').defaultTo(knex.fn.now());
-      table.timestamp('expires_at').notNullable();
-      table.timestamp('notified_at');
-      table.enum('status', ['active', 'fulfilled', 'expired', 'cancelled']).defaultTo('active');
-      table.integer('queue_position');
-      
-      table.timestamps(true, true);
-      
-      table.index(['user_id']);
-      table.index(['library_item_id']);
-      table.index(['status']);
-      table.index(['expires_at']);
     })
     .createTable('external_library_bookmarks', function(table) {
       table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
@@ -126,8 +76,8 @@ exports.up = function(knex) {
       
       table.string('title').notNullable();
       table.string('author');
-      table.string('source'); // google_books, youtube, etc.
-      table.string('external_id');
+      table.string('source').notNullable(); // google_books, youtube, etc.
+      table.string('external_id').notNullable();
       table.string('url').notNullable();
       table.text('description');
       table.string('thumbnail_url');
@@ -137,9 +87,11 @@ exports.up = function(knex) {
       
       table.timestamps(true, true);
       
+      // Indexes
       table.index(['user_id']);
       table.index(['source']);
       table.index(['category']);
+      table.unique(['user_id', 'source', 'external_id']);
     });
 };
 
@@ -150,7 +102,5 @@ exports.up = function(knex) {
 exports.down = function(knex) {
   return knex.schema
     .dropTable('external_library_bookmarks')
-    .dropTable('library_reservations')
-    .dropTable('library_borrowings')
     .dropTable('library_items');
 };

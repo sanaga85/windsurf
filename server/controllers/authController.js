@@ -595,8 +595,8 @@ module.exports = {
   logout,
   refreshToken,
   resetPassword,
-  verifyOtpAndResetPassword,
+  verifyOtp: verifyOtpAndResetPassword,
   changePassword,
-  getCurrentUser,
+  getProfile: getCurrentUser,
   updateProfile
 };

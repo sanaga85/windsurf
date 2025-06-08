@@ -1,134 +1,160 @@
 const express = require('express');
 const router = express.Router();
 const libraryController = require('../controllers/libraryController');
-const externalLibraryController = require('../controllers/externalLibraryController');
 const { body, param, query } = require('express-validator');
 const uploadMiddleware = require('../middleware/uploadMiddleware');
 
 // Validation rules
-const libraryItemValidation = [
+const createLibraryItemValidation = [
   body('title').notEmpty().withMessage('Title is required'),
-  body('type').isIn(['book', 'journal', 'article', 'video', 'audio', 'document', 'url']).withMessage('Invalid item type'),
-  body('isPhysical').isBoolean().withMessage('isPhysical must be boolean'),
-  body('isDigital').isBoolean().withMessage('isDigital must be boolean')
+  body('type').isIn(['book', 'ebook', 'journal', 'article', 'video', 'audio', 'document']).withMessage('Invalid item type'),
+  body('format').isIn(['physical', 'digital']).withMessage('Invalid format'),
+  body('isbn').optional().isISBN().withMessage('Invalid ISBN format'),
+  body('author').optional().notEmpty().withMessage('Author cannot be empty'),
+  body('publisher').optional().notEmpty().withMessage('Publisher cannot be empty')
 ];
 
-const borrowingValidation = [
-  body('libraryItemId').isUUID().withMessage('Valid library item ID is required'),
-  body('dueDate').isISO8601().withMessage('Valid due date is required')
+const updateLibraryItemValidation = [
+  body('title').optional().notEmpty().withMessage('Title cannot be empty'),
+  body('author').optional().notEmpty().withMessage('Author cannot be empty'),
+  body('publisher').optional().notEmpty().withMessage('Publisher cannot be empty'),
+  body('isbn').optional().isISBN().withMessage('Invalid ISBN format')
 ];
 
-const reservationValidation = [
-  body('libraryItemId').isUUID().withMessage('Valid library item ID is required')
+const borrowValidation = [
+  body('itemId').isUUID().withMessage('Valid item ID is required'),
+  body('userId').optional().isUUID().withMessage('Valid user ID is required'),
+  body('dueDate').optional().isISO8601().withMessage('Valid due date is required')
 ];
 
-// Internal Library Routes
+const bulkImportValidation = [
+  body('items').isArray({ min: 1 }).withMessage('Items array is required'),
+  body('items.*.title').notEmpty().withMessage('Title is required for all items'),
+  body('items.*.type').isIn(['book', 'ebook', 'journal', 'article', 'video', 'audio', 'document']).withMessage('Invalid item type'),
+  body('items.*.format').isIn(['physical', 'digital']).withMessage('Invalid format')
+];
 
-// Library items CRUD
-router.get('/items', libraryController.getLibraryItems);
-router.get('/items/search', libraryController.searchLibraryItems);
-router.get('/items/:id', param('id').isUUID(), libraryController.getLibraryItemById);
-router.get('/items/:id/availability', param('id').isUUID(), libraryController.checkItemAvailability);
+// Internal library routes
+router.get('/internal', libraryController.getInternalLibrary);
+router.get('/internal/search', libraryController.searchInternalLibrary);
+router.get('/internal/categories', libraryController.getCategories);
+router.get('/internal/my-borrowed', libraryController.getMyBorrowedItems);
+router.get('/internal/overdue', libraryController.getOverdueItems);
+router.get('/internal/popular', libraryController.getPopularItems);
 
-router.post('/items', libraryItemValidation, libraryController.createLibraryItem);
-router.post('/items/bulk', libraryController.bulkCreateLibraryItems);
-router.post('/items/import-csv', uploadMiddleware.single('file'), libraryController.importItemsFromCSV);
-
-router.put('/items/:id', param('id').isUUID(), libraryController.updateLibraryItem);
-router.delete('/items/:id', param('id').isUUID(), libraryController.deleteLibraryItem);
-
-// File uploads for library items
-router.post('/items/:id/file', 
-  param('id').isUUID(),
-  uploadMiddleware.single('file'),
-  libraryController.uploadItemFile
+router.get('/internal/:id', 
+  param('id').isUUID().withMessage('Invalid item ID'), 
+  libraryController.getInternalLibraryItem
 );
 
-router.post('/items/:id/cover', 
-  param('id').isUUID(),
-  uploadMiddleware.single('cover'),
-  libraryController.uploadItemCover
+router.post('/internal', createLibraryItemValidation, libraryController.createLibraryItem);
+router.post('/internal/bulk', bulkImportValidation, libraryController.bulkCreateLibraryItems);
+router.post('/internal/import-csv', uploadMiddleware.single('csvFile'), libraryController.importLibraryFromCSV);
+router.post('/internal/upload-cover', uploadMiddleware.single('cover'), libraryController.uploadItemCover);
+
+router.put('/internal/:id', 
+  param('id').isUUID().withMessage('Invalid item ID'),
+  updateLibraryItemValidation,
+  libraryController.updateLibraryItem
 );
 
-// QR Code generation for physical books
-router.get('/items/:id/qr-code', param('id').isUUID(), libraryController.generateQRCode);
-router.post('/items/scan-qr', libraryController.scanQRCode);
+router.delete('/internal/:id', 
+  param('id').isUUID().withMessage('Invalid item ID'),
+  libraryController.deleteLibraryItem
+);
 
-// Borrowing management
-router.get('/borrowings', libraryController.getBorrowings);
-router.get('/borrowings/my', libraryController.getMyBorrowings);
-router.get('/borrowings/overdue', libraryController.getOverdueBorrowings);
-router.get('/borrowings/:id', param('id').isUUID(), libraryController.getBorrowingById);
+// Borrowing and returning routes
+router.post('/borrow', borrowValidation, libraryController.borrowItem);
+router.post('/return', 
+  body('borrowId').isUUID().withMessage('Valid borrow ID is required'),
+  libraryController.returnItem
+);
 
-router.post('/borrowings', borrowingValidation, libraryController.createBorrowing);
-router.post('/borrowings/quick-borrow', libraryController.quickBorrow); // For QR code scanning
-router.put('/borrowings/:id/return', param('id').isUUID(), libraryController.returnItem);
-router.put('/borrowings/:id/renew', param('id').isUUID(), libraryController.renewBorrowing);
-router.put('/borrowings/:id/mark-lost', param('id').isUUID(), libraryController.markItemLost);
-router.put('/borrowings/:id/mark-damaged', param('id').isUUID(), libraryController.markItemDamaged);
+router.post('/borrow-qr', 
+  body('qrCode').notEmpty().withMessage('QR code is required'),
+  body('userId').optional().isUUID().withMessage('Valid user ID is required'),
+  libraryController.borrowItemByQR
+);
 
-// Reservations
-router.get('/reservations', libraryController.getReservations);
-router.get('/reservations/my', libraryController.getMyReservations);
-router.post('/reservations', reservationValidation, libraryController.createReservation);
-router.put('/reservations/:id/cancel', param('id').isUUID(), libraryController.cancelReservation);
-router.put('/reservations/:id/fulfill', param('id').isUUID(), libraryController.fulfillReservation);
+router.post('/return-qr', 
+  body('qrCode').notEmpty().withMessage('QR code is required'),
+  libraryController.returnItemByQR
+);
 
-// Library analytics and reports
-router.get('/analytics/overview', libraryController.getLibraryOverview);
-router.get('/analytics/popular-items', libraryController.getPopularItems);
-router.get('/analytics/borrowing-trends', libraryController.getBorrowingTrends);
-router.get('/analytics/user-activity', libraryController.getUserActivity);
+// Reservation routes
+router.post('/reserve', 
+  body('itemId').isUUID().withMessage('Valid item ID is required'),
+  libraryController.reserveItem
+);
 
-// Fine management
-router.get('/fines', libraryController.getFines);
-router.get('/fines/my', libraryController.getMyFines);
-router.put('/fines/:id/pay', param('id').isUUID(), libraryController.payFine);
-router.put('/fines/:id/waive', param('id').isUUID(), libraryController.waiveFine);
+router.delete('/reserve/:id', 
+  param('id').isUUID().withMessage('Invalid reservation ID'),
+  libraryController.cancelReservation
+);
 
-// Inventory management
-router.get('/inventory/low-stock', libraryController.getLowStockItems);
-router.get('/inventory/damaged', libraryController.getDamagedItems);
-router.get('/inventory/lost', libraryController.getLostItems);
-router.post('/inventory/audit', libraryController.performInventoryAudit);
+router.get('/reservations', libraryController.getMyReservations);
 
-// External Library Routes (Federated Search)
+// External library (federated search) routes
+router.get('/external/search', libraryController.searchExternalLibraries);
+router.get('/external/sources', libraryController.getExternalSources);
+router.post('/external/bookmark', 
+  body('source').notEmpty().withMessage('Source is required'),
+  body('externalId').notEmpty().withMessage('External ID is required'),
+  body('title').notEmpty().withMessage('Title is required'),
+  body('metadata').isObject().withMessage('Metadata object is required'),
+  libraryController.bookmarkExternalItem
+);
 
-// Search across external sources
-router.get('/external/search', externalLibraryController.searchExternalSources);
-router.get('/external/search/google-books', externalLibraryController.searchGoogleBooks);
-router.get('/external/search/openlibrary', externalLibraryController.searchOpenLibrary);
-router.get('/external/search/youtube', externalLibraryController.searchYouTube);
-router.get('/external/search/podcasts', externalLibraryController.searchPodcasts);
-router.get('/external/search/arxiv', externalLibraryController.searchArxiv);
+router.post('/external/import', 
+  body('source').notEmpty().withMessage('Source is required'),
+  body('externalId').notEmpty().withMessage('External ID is required'),
+  body('metadata').isObject().withMessage('Metadata object is required'),
+  libraryController.importExternalItem
+);
 
-// External item details
-router.get('/external/item/:source/:id', externalLibraryController.getExternalItemDetails);
+router.get('/external/bookmarks', libraryController.getExternalBookmarks);
+router.delete('/external/bookmarks/:id', 
+  param('id').isUUID().withMessage('Invalid bookmark ID'),
+  libraryController.removeExternalBookmark
+);
 
-// Bookmarking external resources
-router.get('/external/bookmarks', externalLibraryController.getExternalBookmarks);
-router.post('/external/bookmarks', externalLibraryController.createExternalBookmark);
-router.delete('/external/bookmarks/:id', param('id').isUUID(), externalLibraryController.deleteExternalBookmark);
+// QR code management
+router.get('/internal/:id/qr', 
+  param('id').isUUID().withMessage('Invalid item ID'),
+  libraryController.generateQRCode
+);
 
-// Import external items to internal library
-router.post('/external/import', externalLibraryController.importExternalItem);
-router.post('/external/bulk-import', externalLibraryController.bulkImportExternalItems);
+router.post('/scan-qr', 
+  body('qrCode').notEmpty().withMessage('QR code is required'),
+  libraryController.scanQRCode
+);
 
-// Categories and tags
-router.get('/categories', libraryController.getCategories);
-router.post('/categories', libraryController.createCategory);
-router.get('/tags', libraryController.getTags);
-router.post('/tags', libraryController.createTag);
+// Analytics and reports
+router.get('/analytics/borrowing', libraryController.getBorrowingAnalytics);
+router.get('/analytics/popular', libraryController.getPopularItemsAnalytics);
+router.get('/analytics/overdue', libraryController.getOverdueAnalytics);
+router.get('/analytics/usage', libraryController.getUsageAnalytics);
 
-// Library settings and policies
-router.get('/settings', libraryController.getLibrarySettings);
-router.put('/settings', libraryController.updateLibrarySettings);
-router.get('/policies', libraryController.getBorrowingPolicies);
-router.put('/policies', libraryController.updateBorrowingPolicies);
+// Library management (Librarian only)
+router.get('/manage/borrowings', libraryController.getAllBorrowings);
+router.get('/manage/reservations', libraryController.getAllReservations);
+router.get('/manage/overdue', libraryController.getAllOverdueItems);
+router.get('/manage/inventory', libraryController.getInventoryReport);
 
-// Automated tasks (for cron jobs)
-router.post('/tasks/auto-return', libraryController.autoReturnOverdueItems);
-router.post('/tasks/send-reminders', libraryController.sendDueReminders);
-router.post('/tasks/calculate-fines', libraryController.calculateOverdueFines);
+router.patch('/manage/borrowings/:id/extend', 
+  param('id').isUUID().withMessage('Invalid borrowing ID'),
+  body('newDueDate').isISO8601().withMessage('Valid due date is required'),
+  libraryController.extendBorrowing
+);
+
+router.patch('/manage/borrowings/:id/fine', 
+  param('id').isUUID().withMessage('Invalid borrowing ID'),
+  body('amount').isFloat({ min: 0 }).withMessage('Valid fine amount is required'),
+  body('reason').notEmpty().withMessage('Fine reason is required'),
+  libraryController.addFine
+);
+
+// Auto-return system (cron job endpoint)
+router.post('/auto-return', libraryController.autoReturnOverdueItems);
 
 module.exports = router;

@@ -2,86 +2,91 @@ const express = require('express');
 const router = express.Router();
 const courseController = require('../controllers/courseController');
 const { body, param, query } = require('express-validator');
-const uploadMiddleware = require('../middleware/uploadMiddleware');
 
 // Validation rules
-const programValidation = [
-  body('name').notEmpty().withMessage('Program name is required'),
-  body('code').optional().notEmpty().withMessage('Program code cannot be empty')
+const createCourseValidation = [
+  body('name').notEmpty().withMessage('Course name is required'),
+  body('code').optional().notEmpty().withMessage('Course code cannot be empty'),
+  body('description').optional().notEmpty().withMessage('Description cannot be empty'),
+  body('parentId').optional().isUUID().withMessage('Invalid parent ID')
 ];
 
-const classValidation = [
-  body('name').notEmpty().withMessage('Class name is required'),
-  body('programId').optional().isUUID().withMessage('Invalid program ID')
-];
-
-const subjectValidation = [
-  body('name').notEmpty().withMessage('Subject name is required'),
-  body('classId').isUUID().withMessage('Valid class ID is required')
-];
-
-const chapterValidation = [
-  body('name').notEmpty().withMessage('Chapter name is required'),
-  body('subjectId').isUUID().withMessage('Valid subject ID is required')
+const updateCourseValidation = [
+  body('name').optional().notEmpty().withMessage('Course name cannot be empty'),
+  body('code').optional().notEmpty().withMessage('Course code cannot be empty'),
+  body('description').optional().notEmpty().withMessage('Description cannot be empty')
 ];
 
 const enrollmentValidation = [
-  body('userId').isUUID().withMessage('Valid user ID is required'),
-  body('programId').optional().isUUID().withMessage('Invalid program ID'),
-  body('classId').optional().isUUID().withMessage('Invalid class ID'),
-  body('subjectId').optional().isUUID().withMessage('Invalid subject ID')
+  body('userIds').isArray({ min: 1 }).withMessage('User IDs array is required'),
+  body('userIds.*').isUUID().withMessage('Invalid user ID')
 ];
 
-// Program routes
-router.get('/programs', courseController.getPrograms);
-router.get('/programs/:id', param('id').isUUID(), courseController.getProgramById);
-router.post('/programs', programValidation, courseController.createProgram);
-router.put('/programs/:id', param('id').isUUID(), programValidation, courseController.updateProgram);
-router.delete('/programs/:id', param('id').isUUID(), courseController.deleteProgram);
+const bulkCreateValidation = [
+  body('courses').isArray({ min: 1 }).withMessage('Courses array is required'),
+  body('courses.*.name').notEmpty().withMessage('Course name is required for all courses'),
+  body('courses.*.parentId').optional().isUUID().withMessage('Invalid parent ID')
+];
 
-// Class routes
-router.get('/classes', courseController.getClasses);
-router.get('/classes/:id', param('id').isUUID(), courseController.getClassById);
-router.post('/classes', classValidation, courseController.createClass);
-router.put('/classes/:id', param('id').isUUID(), classValidation, courseController.updateClass);
-router.delete('/classes/:id', param('id').isUUID(), courseController.deleteClass);
-
-// Subject routes
-router.get('/subjects', courseController.getSubjects);
-router.get('/subjects/:id', param('id').isUUID(), courseController.getSubjectById);
-router.post('/subjects', subjectValidation, courseController.createSubject);
-router.put('/subjects/:id', param('id').isUUID(), subjectValidation, courseController.updateSubject);
-router.delete('/subjects/:id', param('id').isUUID(), courseController.deleteSubject);
-
-// Chapter routes
-router.get('/chapters', courseController.getChapters);
-router.get('/chapters/:id', param('id').isUUID(), courseController.getChapterById);
-router.post('/chapters', chapterValidation, courseController.createChapter);
-router.put('/chapters/:id', param('id').isUUID(), chapterValidation, courseController.updateChapter);
-router.delete('/chapters/:id', param('id').isUUID(), courseController.deleteChapter);
-
-// Enrollment routes
-router.get('/enrollments', courseController.getEnrollments);
-router.get('/enrollments/my', courseController.getMyEnrollments);
-router.post('/enrollments', enrollmentValidation, courseController.createEnrollment);
-router.post('/enrollments/bulk', courseController.bulkCreateEnrollments);
-router.put('/enrollments/:id', param('id').isUUID(), courseController.updateEnrollment);
-router.delete('/enrollments/:id', param('id').isUUID(), courseController.deleteEnrollment);
-
-// Faculty assignment routes
-router.get('/assignments', courseController.getFacultyAssignments);
-router.get('/assignments/my', courseController.getMyAssignments);
-router.post('/assignments', courseController.createFacultyAssignment);
-router.put('/assignments/:id', param('id').isUUID(), courseController.updateFacultyAssignment);
-router.delete('/assignments/:id', param('id').isUUID(), courseController.deleteFacultyAssignment);
-
-// Bulk operations
-router.post('/bulk-import', uploadMiddleware.single('file'), courseController.bulkImportCourses);
+// Routes
+router.get('/', courseController.getCourses);
 router.get('/hierarchy', courseController.getCourseHierarchy);
-router.get('/structure/:type', courseController.getCourseStructureByType);
+router.get('/search', courseController.searchCourses);
+router.get('/my-courses', courseController.getMyCourses);
+router.get('/templates', courseController.getCourseTemplates);
 
-// Progress tracking
-router.get('/progress/:userId', param('userId').isUUID(), courseController.getUserProgress);
-router.put('/progress/:userId/:subjectId', courseController.updateUserProgress);
+router.get('/:id', param('id').isUUID().withMessage('Invalid course ID'), courseController.getCourseById);
+router.get('/:id/children', param('id').isUUID().withMessage('Invalid course ID'), courseController.getCourseChildren);
+router.get('/:id/content', param('id').isUUID().withMessage('Invalid course ID'), courseController.getCourseContent);
+router.get('/:id/enrollments', param('id').isUUID().withMessage('Invalid course ID'), courseController.getCourseEnrollments);
+router.get('/:id/analytics', param('id').isUUID().withMessage('Invalid course ID'), courseController.getCourseAnalytics);
+
+router.post('/', createCourseValidation, courseController.createCourse);
+router.post('/bulk', bulkCreateValidation, courseController.bulkCreateCourses);
+router.post('/import-csv', courseController.importCoursesFromCSV);
+router.post('/:id/enroll', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  enrollmentValidation,
+  courseController.enrollUsers
+);
+router.post('/:id/unenroll', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  enrollmentValidation,
+  courseController.unenrollUsers
+);
+
+router.put('/:id', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  updateCourseValidation,
+  courseController.updateCourse
+);
+
+router.patch('/:id/activate', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  courseController.activateCourse
+);
+
+router.patch('/:id/deactivate', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  courseController.deactivateCourse
+);
+
+router.delete('/:id', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  courseController.deleteCourse
+);
+
+// Course structure management
+router.post('/:id/move', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  body('newParentId').optional().isUUID().withMessage('Invalid new parent ID'),
+  body('position').optional().isInt({ min: 0 }).withMessage('Position must be a non-negative integer'),
+  courseController.moveCourse
+);
+
+router.post('/:id/duplicate', 
+  param('id').isUUID().withMessage('Invalid course ID'),
+  courseController.duplicateCourse
+);
 
 module.exports = router;

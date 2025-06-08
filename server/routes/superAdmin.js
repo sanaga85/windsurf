@@ -2,68 +2,147 @@ const express = require('express');
 const router = express.Router();
 const superAdminController = require('../controllers/superAdminController');
 const { body, param, query } = require('express-validator');
-const uploadMiddleware = require('../middleware/uploadMiddleware');
 
-// Middleware to check super admin role
+// Middleware to check SuperAdmin role
 const requireSuperAdmin = (req, res, next) => {
   if (req.user.role !== 'super_admin') {
     return res.status(403).json({
       success: false,
-      message: 'Access denied. Super admin role required.'
+      message: 'Access denied. SuperAdmin role required.'
     });
   }
   next();
 };
 
-// Apply super admin middleware to all routes
+// Apply SuperAdmin middleware to all routes
 router.use(requireSuperAdmin);
 
-// Platform overview and dashboard
-router.get('/dashboard', superAdminController.getDashboard);
+// Platform overview
+router.get('/dashboard', superAdminController.getSuperAdminDashboard);
 router.get('/platform-stats', superAdminController.getPlatformStats);
 router.get('/system-health', superAdminController.getSystemHealth);
 
 // Institution management
 router.get('/institutions', superAdminController.getAllInstitutions);
-router.get('/institutions/:id', param('id').isUUID(), superAdminController.getInstitutionDetails);
-router.post('/institutions', superAdminController.createInstitution);
-router.put('/institutions/:id', param('id').isUUID(), superAdminController.updateInstitution);
-router.put('/institutions/:id/activate', param('id').isUUID(), superAdminController.activateInstitution);
-router.put('/institutions/:id/suspend', param('id').isUUID(), superAdminController.suspendInstitution);
-router.delete('/institutions/:id', param('id').isUUID(), superAdminController.deleteInstitution);
+router.get('/institutions/pending', superAdminController.getPendingInstitutions);
+router.get('/institutions/trial', superAdminController.getTrialInstitutions);
+router.get('/institutions/suspended', superAdminController.getSuspendedInstitutions);
 
-// Institution analytics
-router.get('/institutions/:id/analytics', param('id').isUUID(), superAdminController.getInstitutionAnalytics);
-router.get('/institutions/:id/users', param('id').isUUID(), superAdminController.getInstitutionUsers);
-router.get('/institutions/:id/usage', param('id').isUUID(), superAdminController.getInstitutionUsage);
+router.post('/institutions', 
+  body('name').notEmpty().withMessage('Institution name is required'),
+  body('slug').notEmpty().withMessage('Institution slug is required'),
+  body('subdomain').notEmpty().withMessage('Subdomain is required'),
+  body('type').isIn(['school', 'university', 'corporate', 'coaching']).withMessage('Invalid institution type'),
+  body('adminEmail').isEmail().withMessage('Valid admin email is required'),
+  body('adminPhone').isMobilePhone().withMessage('Valid admin phone is required'),
+  superAdminController.createInstitution
+);
+
+router.get('/institutions/:id', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  superAdminController.getInstitutionDetails
+);
+
+router.put('/institutions/:id', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  superAdminController.updateInstitution
+);
+
+router.patch('/institutions/:id/activate', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  superAdminController.activateInstitution
+);
+
+router.patch('/institutions/:id/suspend', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  body('reason').notEmpty().withMessage('Suspension reason is required'),
+  superAdminController.suspendInstitution
+);
+
+router.patch('/institutions/:id/extend-trial', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  body('days').isInt({ min: 1, max: 365 }).withMessage('Days must be between 1 and 365'),
+  superAdminController.extendTrial
+);
+
+router.delete('/institutions/:id', 
+  param('id').isUUID().withMessage('Invalid institution ID'),
+  superAdminController.deleteInstitution
+);
 
 // User management across platform
 router.get('/users', superAdminController.getAllUsers);
 router.get('/users/search', superAdminController.searchUsers);
-router.get('/users/:id', param('id').isUUID(), superAdminController.getUserDetails);
-router.put('/users/:id/impersonate', param('id').isUUID(), superAdminController.impersonateUser);
-router.put('/users/:id/reset-password', param('id').isUUID(), superAdminController.resetUserPassword);
-router.put('/users/:id/activate', param('id').isUUID(), superAdminController.activateUser);
-router.put('/users/:id/deactivate', param('id').isUUID(), superAdminController.deactivateUser);
+router.get('/users/admins', superAdminController.getInstitutionAdmins);
+router.get('/users/active-sessions', superAdminController.getActiveSessions);
+
+router.post('/users/impersonate', 
+  body('userId').isUUID().withMessage('Valid user ID is required'),
+  superAdminController.impersonateUser
+);
+
+router.patch('/users/:id/force-logout', 
+  param('id').isUUID().withMessage('Invalid user ID'),
+  superAdminController.forceLogoutUser
+);
+
+router.patch('/users/:id/reset-password', 
+  param('id').isUUID().withMessage('Invalid user ID'),
+  superAdminController.resetUserPassword
+);
 
 // Platform configuration
 router.get('/config', superAdminController.getPlatformConfig);
 router.put('/config', superAdminController.updatePlatformConfig);
-router.get('/features', superAdminController.getFeatureFlags);
-router.put('/features', superAdminController.updateFeatureFlags);
 
-// Global announcements
-router.get('/announcements', superAdminController.getGlobalAnnouncements);
-router.post('/announcements', superAdminController.createGlobalAnnouncement);
-router.put('/announcements/:id', param('id').isUUID(), superAdminController.updateGlobalAnnouncement);
-router.delete('/announcements/:id', param('id').isUUID(), superAdminController.deleteGlobalAnnouncement);
-router.post('/announcements/:id/send', param('id').isUUID(), superAdminController.sendGlobalAnnouncement);
+router.get('/features', superAdminController.getGlobalFeatures);
+router.put('/features', superAdminController.updateGlobalFeatures);
 
-// System monitoring and logs
-router.get('/logs/system', superAdminController.getSystemLogs);
+// Announcements
+router.get('/announcements', superAdminController.getAnnouncements);
+router.post('/announcements', 
+  body('title').notEmpty().withMessage('Announcement title is required'),
+  body('content').notEmpty().withMessage('Announcement content is required'),
+  body('type').isIn(['info', 'warning', 'success', 'error']).withMessage('Invalid announcement type'),
+  body('targetAudience').isIn(['all', 'admins', 'faculty', 'students']).withMessage('Invalid target audience'),
+  superAdminController.createAnnouncement
+);
+
+router.put('/announcements/:id', 
+  param('id').isUUID().withMessage('Invalid announcement ID'),
+  superAdminController.updateAnnouncement
+);
+
+router.delete('/announcements/:id', 
+  param('id').isUUID().withMessage('Invalid announcement ID'),
+  superAdminController.deleteAnnouncement
+);
+
+// System monitoring
+router.get('/logs', superAdminController.getSystemLogs);
 router.get('/logs/errors', superAdminController.getErrorLogs);
+router.get('/logs/security', superAdminController.getSecurityLogs);
 router.get('/logs/audit', superAdminController.getAuditLogs);
-router.get('/logs/performance', superAdminController.getPerformanceLogs);
+
+router.get('/performance', superAdminController.getPerformanceMetrics);
+router.get('/database-stats', superAdminController.getDatabaseStats);
+router.get('/storage-usage', superAdminController.getStorageUsage);
+
+// Backup and maintenance
+router.post('/backup/create', superAdminController.createBackup);
+router.get('/backup/list', superAdminController.listBackups);
+router.post('/backup/restore', 
+  body('backupId').notEmpty().withMessage('Backup ID is required'),
+  superAdminController.restoreBackup
+);
+
+router.post('/maintenance/start', 
+  body('message').notEmpty().withMessage('Maintenance message is required'),
+  body('estimatedDuration').isInt({ min: 1 }).withMessage('Estimated duration in minutes is required'),
+  superAdminController.startMaintenance
+);
+
+router.post('/maintenance/end', superAdminController.endMaintenance);
 
 // Analytics and reporting
 router.get('/analytics/platform', superAdminController.getPlatformAnalytics);
@@ -71,62 +150,42 @@ router.get('/analytics/revenue', superAdminController.getRevenueAnalytics);
 router.get('/analytics/growth', superAdminController.getGrowthAnalytics);
 router.get('/analytics/usage', superAdminController.getUsageAnalytics);
 
-// Subscription and billing management
-router.get('/subscriptions', superAdminController.getSubscriptions);
-router.get('/subscriptions/:id', param('id').isUUID(), superAdminController.getSubscriptionDetails);
-router.put('/subscriptions/:id/extend', param('id').isUUID(), superAdminController.extendSubscription);
-router.put('/subscriptions/:id/cancel', param('id').isUUID(), superAdminController.cancelSubscription);
+router.get('/reports/institutions', superAdminController.getInstitutionReport);
+router.get('/reports/users', superAdminController.getUserReport);
+router.get('/reports/content', superAdminController.getContentReport);
+router.get('/reports/performance', superAdminController.getPerformanceReport);
 
-// Backup and maintenance
-router.get('/backups', superAdminController.getBackups);
-router.post('/backups/create', superAdminController.createBackup);
-router.post('/backups/:id/restore', param('id').isUUID(), superAdminController.restoreBackup);
-router.delete('/backups/:id', param('id').isUUID(), superAdminController.deleteBackup);
+// Export data
+router.get('/export/institutions', superAdminController.exportInstitutions);
+router.get('/export/users', superAdminController.exportUsers);
+router.get('/export/analytics', superAdminController.exportAnalytics);
 
-// System maintenance
-router.get('/maintenance/status', superAdminController.getMaintenanceStatus);
-router.post('/maintenance/enable', superAdminController.enableMaintenanceMode);
-router.post('/maintenance/disable', superAdminController.disableMaintenanceMode);
-router.post('/maintenance/schedule', superAdminController.scheduleMaintenanceWindow);
-
-// Database operations
-router.get('/database/stats', superAdminController.getDatabaseStats);
-router.post('/database/optimize', superAdminController.optimizeDatabase);
-router.post('/database/cleanup', superAdminController.cleanupDatabase);
-
-// File and storage management
-router.get('/storage/usage', superAdminController.getStorageUsage);
-router.get('/storage/files', superAdminController.getStorageFiles);
-router.delete('/storage/cleanup', superAdminController.cleanupStorage);
-
-// Security and audit
-router.get('/security/threats', superAdminController.getSecurityThreats);
+// Security management
 router.get('/security/failed-logins', superAdminController.getFailedLogins);
 router.get('/security/suspicious-activity', superAdminController.getSuspiciousActivity);
-router.post('/security/block-ip', superAdminController.blockIP);
-router.delete('/security/unblock-ip/:ip', superAdminController.unblockIP);
+router.get('/security/blocked-ips', superAdminController.getBlockedIPs);
+
+router.post('/security/block-ip', 
+  body('ip').isIP().withMessage('Valid IP address is required'),
+  body('reason').notEmpty().withMessage('Block reason is required'),
+  superAdminController.blockIP
+);
+
+router.delete('/security/unblock-ip/:ip', 
+  param('ip').isIP().withMessage('Valid IP address is required'),
+  superAdminController.unblockIP
+);
 
 // API management
 router.get('/api/usage', superAdminController.getAPIUsage);
 router.get('/api/rate-limits', superAdminController.getRateLimits);
 router.put('/api/rate-limits', superAdminController.updateRateLimits);
-router.get('/api/keys', superAdminController.getAPIKeys);
-router.post('/api/keys', superAdminController.createAPIKey);
-router.delete('/api/keys/:id', param('id').isUUID(), superAdminController.revokeAPIKey);
-
-// Email and notification management
-router.get('/notifications/templates', superAdminController.getNotificationTemplates);
-router.put('/notifications/templates/:id', param('id').isUUID(), superAdminController.updateNotificationTemplate);
-router.get('/notifications/queue', superAdminController.getNotificationQueue);
-router.post('/notifications/test', superAdminController.testNotification);
 
 // Integration management
 router.get('/integrations', superAdminController.getIntegrations);
-router.put('/integrations/:name', superAdminController.updateIntegration);
-router.post('/integrations/:name/test', superAdminController.testIntegration);
-
-// Export and import
-router.get('/export/platform-data', superAdminController.exportPlatformData);
-router.post('/import/platform-data', uploadMiddleware.single('file'), superAdminController.importPlatformData);
+router.put('/integrations/:name', 
+  param('name').notEmpty().withMessage('Integration name is required'),
+  superAdminController.updateIntegration
+);
 
 module.exports = router;

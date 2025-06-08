@@ -1,34 +1,37 @@
-FROM node:18-alpine as build
+# Multi-stage build for production optimization
+FROM node:18-alpine AS base
 
 WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
-
-# Copy source code
+# Development stage
+FROM base AS development
+RUN npm ci
 COPY . .
+EXPOSE 3000
+CMD ["npm", "run", "dev"]
 
-# Build the application
+# Build stage
+FROM base AS build
+RUN npm ci
+COPY . .
 RUN npm run build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:alpine AS production
 
-# Copy built assets from build stage
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy nginx configuration
+# Copy custom nginx config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose port
-EXPOSE 3000
+# Copy built application
+COPY --from=build /app/dist /usr/share/nginx/html
 
-# Health check
+# Add health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3000 || exit 1
+  CMD curl -f http://localhost/ || exit 1
 
-# Start nginx
+EXPOSE 80
+
 CMD ["nginx", "-g", "daemon off;"]

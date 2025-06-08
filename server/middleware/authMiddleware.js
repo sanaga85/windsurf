@@ -55,7 +55,7 @@ const authMiddleware = async (req, res, next) => {
     }
 
     // Check if user belongs to the current tenant (if tenant context exists)
-    if (req.institutionId && user.institution_id !== req.institutionId) {
+    if (req.institutionId && user.institution_id !== req.institutionId && user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
         message: 'Access denied for this institution',
@@ -81,36 +81,26 @@ const authMiddleware = async (req, res, next) => {
       });
     }
 
-    // Check if profile completion is required
-    if (!user.profile_completed && !req.path.includes('/auth/complete-profile')) {
-      return res.status(428).json({
-        success: false,
-        message: 'Profile completion required',
-        code: 'PROFILE_COMPLETION_REQUIRED'
-      });
-    }
-
     // Set user context
     req.user = {
+      userId: user.id,
       id: user.id,
       username: user.username,
       email: user.email,
       phone: user.phone,
       firstName: user.first_name,
       lastName: user.last_name,
-      displayName: user.display_name,
       role: user.role,
       permissions: user.permissions || [],
       institutionId: user.institution_id,
-      preferences: user.preferences || {},
-      profileCompleted: user.profile_completed,
       forcePasswordChange: user.force_password_change
     };
 
-    // Update last activity
-    await db('users')
+    // Update last activity (async, don't wait)
+    db('users')
       .where({ id: user.id })
-      .update({ last_login: new Date() });
+      .update({ last_login_at: new Date() })
+      .catch(err => logger.warn('Failed to update last login:', err));
 
     // Log authentication
     logger.info(`User authenticated: ${user.username}`, {
@@ -148,7 +138,7 @@ const requireRole = (roles) => {
     const allowedRoles = Array.isArray(roles) ? roles : [roles];
 
     if (!allowedRoles.includes(userRole)) {
-      logger.security(`Access denied for role ${userRole}`, {
+      logger.warn(`Access denied for role ${userRole}`, {
         userId: req.user.id,
         requiredRoles: allowedRoles,
         userRole,
@@ -182,7 +172,7 @@ const requirePermission = (permission) => {
     const userPermissions = req.user.permissions || [];
     
     if (!userPermissions.includes(permission) && req.user.role !== 'super_admin') {
-      logger.security(`Permission denied: ${permission}`, {
+      logger.warn(`Permission denied: ${permission}`, {
         userId: req.user.id,
         requiredPermission: permission,
         userPermissions,
@@ -218,8 +208,9 @@ const optionalAuth = async (req, res, next) => {
         .where({ id: decoded.userId, is_active: true })
         .first();
 
-      if (user && (!req.institutionId || user.institution_id === req.institutionId)) {
+      if (user && (!req.institutionId || user.institution_id === req.institutionId || user.role === 'super_admin')) {
         req.user = {
+          userId: user.id,
           id: user.id,
           username: user.username,
           email: user.email,

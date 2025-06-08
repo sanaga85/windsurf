@@ -5,83 +5,122 @@ const { body, param, query } = require('express-validator');
 const uploadMiddleware = require('../middleware/uploadMiddleware');
 
 // Validation rules
-const contentValidation = [
+const createContentValidation = [
   body('title').notEmpty().withMessage('Content title is required'),
-  body('chapterId').isUUID().withMessage('Valid chapter ID is required'),
-  body('type').isIn(['pdf', 'mp4', 'mp3', 'epub', 'docx', 'image', 'url']).withMessage('Invalid content type')
+  body('type').isIn(['pdf', 'video', 'audio', 'epub', 'document', 'url']).withMessage('Invalid content type'),
+  body('courseId').isUUID().withMessage('Valid course ID is required')
 ];
 
-const progressValidation = [
-  body('progressPercentage').isInt({ min: 0, max: 100 }).withMessage('Progress must be between 0 and 100'),
-  body('currentPage').optional().isInt({ min: 0 }).withMessage('Current page must be a positive number'),
-  body('currentTimeSeconds').optional().isInt({ min: 0 }).withMessage('Current time must be a positive number')
+const updateContentValidation = [
+  body('title').optional().notEmpty().withMessage('Content title cannot be empty'),
+  body('description').optional().notEmpty().withMessage('Description cannot be empty')
 ];
 
 const annotationValidation = [
   body('type').isIn(['highlight', 'note', 'bookmark']).withMessage('Invalid annotation type'),
-  body('content').optional().notEmpty().withMessage('Annotation content cannot be empty'),
-  body('position').isObject().withMessage('Position data is required')
+  body('content').notEmpty().withMessage('Annotation content is required'),
+  body('position').isObject().withMessage('Position object is required')
 ];
 
-// Content CRUD routes
+// Routes
 router.get('/', contentController.getContent);
 router.get('/search', contentController.searchContent);
-router.get('/:id', param('id').isUUID(), contentController.getContentById);
-router.get('/:id/metadata', param('id').isUUID(), contentController.getContentMetadata);
+router.get('/recent', contentController.getRecentContent);
+router.get('/my-content', contentController.getMyContent);
 
-router.post('/', contentValidation, contentController.createContent);
+router.get('/:id', param('id').isUUID().withMessage('Invalid content ID'), contentController.getContentById);
+router.get('/:id/annotations', param('id').isUUID().withMessage('Invalid content ID'), contentController.getContentAnnotations);
+router.get('/:id/progress', param('id').isUUID().withMessage('Invalid content ID'), contentController.getContentProgress);
+router.get('/:id/analytics', param('id').isUUID().withMessage('Invalid content ID'), contentController.getContentAnalytics);
+
+// File upload routes
 router.post('/upload', uploadMiddleware.single('file'), contentController.uploadContent);
-router.post('/bulk-upload', uploadMiddleware.array('files', 10), contentController.bulkUploadContent);
-router.post('/url', contentController.addUrlContent);
+router.post('/upload-multiple', uploadMiddleware.array('files', 10), contentController.uploadMultipleContent);
 
-router.put('/:id', param('id').isUUID(), contentController.updateContent);
-router.put('/:id/metadata', param('id').isUUID(), contentController.updateContentMetadata);
+// Content management routes
+router.post('/', createContentValidation, contentController.createContent);
+router.post('/url', 
+  body('title').notEmpty().withMessage('Content title is required'),
+  body('url').isURL().withMessage('Valid URL is required'),
+  body('courseId').isUUID().withMessage('Valid course ID is required'),
+  contentController.createUrlContent
+);
 
-router.delete('/:id', param('id').isUUID(), contentController.deleteContent);
+router.put('/:id', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  updateContentValidation,
+  contentController.updateContent
+);
 
-// Content access and streaming
-router.get('/:id/stream', param('id').isUUID(), contentController.streamContent);
-router.get('/:id/download', param('id').isUUID(), contentController.downloadContent);
-router.get('/:id/thumbnail', param('id').isUUID(), contentController.getContentThumbnail);
+router.patch('/:id/publish', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.publishContent
+);
 
-// Progress tracking
-router.get('/:id/progress', param('id').isUUID(), contentController.getContentProgress);
-router.put('/:id/progress', param('id').isUUID(), progressValidation, contentController.updateContentProgress);
+router.patch('/:id/unpublish', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.unpublishContent
+);
 
-// Annotations (highlights, notes, bookmarks)
-router.get('/:id/annotations', param('id').isUUID(), contentController.getContentAnnotations);
-router.post('/:id/annotations', param('id').isUUID(), annotationValidation, contentController.createAnnotation);
-router.put('/:id/annotations/:annotationId', contentController.updateAnnotation);
-router.delete('/:id/annotations/:annotationId', contentController.deleteAnnotation);
+router.delete('/:id', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.deleteContent
+);
 
-// Bookmarks
-router.get('/bookmarks/my', contentController.getMyBookmarks);
-router.post('/:id/bookmark', param('id').isUUID(), contentController.addBookmark);
-router.delete('/:id/bookmark', param('id').isUUID(), contentController.removeBookmark);
+// Annotation routes
+router.post('/:id/annotations', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  annotationValidation,
+  contentController.createAnnotation
+);
 
-// Reading session management
-router.post('/:id/start-session', param('id').isUUID(), contentController.startReadingSession);
-router.put('/:id/update-session', param('id').isUUID(), contentController.updateReadingSession);
-router.post('/:id/end-session', param('id').isUUID(), contentController.endReadingSession);
+router.put('/:id/annotations/:annotationId', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  param('annotationId').isUUID().withMessage('Invalid annotation ID'),
+  contentController.updateAnnotation
+);
 
-// Content analytics
-router.get('/:id/analytics', param('id').isUUID(), contentController.getContentAnalytics);
-router.get('/analytics/popular', contentController.getPopularContent);
-router.get('/analytics/recent', contentController.getRecentContent);
+router.delete('/:id/annotations/:annotationId', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  param('annotationId').isUUID().withMessage('Invalid annotation ID'),
+  contentController.deleteAnnotation
+);
 
-// Content sharing and permissions
-router.get('/:id/permissions', param('id').isUUID(), contentController.getContentPermissions);
-router.put('/:id/permissions', param('id').isUUID(), contentController.updateContentPermissions);
-router.post('/:id/share', param('id').isUUID(), contentController.shareContent);
+// Progress tracking routes
+router.post('/:id/progress', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  body('position').isObject().withMessage('Position object is required'),
+  body('percentage').isFloat({ min: 0, max: 100 }).withMessage('Percentage must be between 0 and 100'),
+  contentController.updateProgress
+);
 
-// Content organization
-router.get('/by-chapter/:chapterId', param('chapterId').isUUID(), contentController.getContentByChapter);
-router.get('/by-subject/:subjectId', param('subjectId').isUUID(), contentController.getContentBySubject);
-router.get('/by-type/:type', contentController.getContentByType);
+router.post('/:id/complete', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.markAsComplete
+);
+
+// Content interaction routes
+router.post('/:id/view', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.recordView
+);
+
+router.post('/:id/download', 
+  param('id').isUUID().withMessage('Invalid content ID'),
+  contentController.recordDownload
+);
 
 // Bulk operations
-router.post('/bulk-assign', contentController.bulkAssignContent);
-router.post('/bulk-delete', contentController.bulkDeleteContent);
-router.post('/bulk-move', contentController.bulkMoveContent);
+router.post('/bulk-upload', uploadMiddleware.array('files', 50), contentController.bulkUploadContent);
+router.post('/bulk-assign', 
+  body('contentIds').isArray({ min: 1 }).withMessage('Content IDs array is required'),
+  body('courseIds').isArray({ min: 1 }).withMessage('Course IDs array is required'),
+  contentController.bulkAssignContent
+);
+
+router.delete('/bulk-delete', 
+  body('contentIds').isArray({ min: 1 }).withMessage('Content IDs array is required'),
+  contentController.bulkDeleteContent
+);
 
 module.exports = router;

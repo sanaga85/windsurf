@@ -150,9 +150,9 @@ module.exports = {
 
   // Borrowing Limits by Role
   borrowingLimits: {
-    [this.userRoles?.STUDENT]: { maxBooks: 2, durationDays: 14 },
-    [this.userRoles?.FACULTY]: { maxBooks: 5, durationDays: 30 },
-    [this.userRoles?.LIBRARIAN]: { maxBooks: 10, durationDays: 30 },
+    student: { maxBooks: 2, durationDays: 14 },
+    faculty: { maxBooks: 5, durationDays: 30 },
+    librarian: { maxBooks: 10, durationDays: 30 },
     default: { maxBooks: 2, durationDays: 14 }
   }
 };

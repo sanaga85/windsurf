@@ -25,14 +25,16 @@ const changePasswordValidation = [
   body('newPassword').isLength({ min: 8 }).withMessage('New password must be at least 8 characters')
 ];
 
-// Routes
+// Public routes
 router.post('/login', loginValidation, authController.login);
-router.post('/logout', authMiddleware, authController.logout);
-router.post('/refresh-token', authController.refreshToken);
 router.post('/reset-password', resetPasswordValidation, authController.resetPassword);
-router.post('/verify-otp', verifyOtpValidation, authController.verifyOtpAndResetPassword);
+router.post('/verify-otp', verifyOtpValidation, authController.verifyOtp);
+router.post('/refresh-token', authController.refreshToken);
+
+// Protected routes
+router.post('/logout', authMiddleware, authController.logout);
 router.post('/change-password', authMiddleware, changePasswordValidation, authController.changePassword);
-router.get('/me', authMiddleware, authController.getCurrentUser);
+router.get('/profile', authMiddleware, authController.getProfile);
 router.put('/profile', authMiddleware, authController.updateProfile);
 
 module.exports = router;
